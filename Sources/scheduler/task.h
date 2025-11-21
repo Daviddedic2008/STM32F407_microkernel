@@ -24,9 +24,34 @@
  *  there is a static max num of tasks, currently set to 30
  */
 
+/*
+ * IPC explanation:
+ * inter process communication done with mailbox system
+ * tasks can send messages to other tasks into their mailbox
+ * if attempting to recieve a message from an empty mailbox, task will auto yield
+ */
+
 #ifndef SOURCES_SCHEDULER_TASK_H_
 #define SOURCES_SCHEDULER_TASK_H_
 
+typedef struct{
+	uint32_t* data;
+	uint32_t sz;
+	uint32_t destId;
+}message;
 
+typedef struct{
+	message* buf;
+	uint32_t head, tail, sz;
+}mailbox;
+
+typedef struct{
+	uint32_t* psp;
+	uint32_t* next_psp;
+	mailbox box;
+}task;
+
+#define maxTasks 30
+#define taskSz 128
 
 #endif /* SOURCES_GENERAL_SCHEDULER_TASK_H_ */

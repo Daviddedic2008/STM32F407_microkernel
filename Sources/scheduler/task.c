@@ -5,15 +5,11 @@
  *  Created on: Nov 20, 2025
  *      Author: david
  */
-#define maxTasks 30
-#define taskSz 128
+#include "../allocator/alloc.h"
+#include "task.h"
+
 
 static uint32_t stackMem[maxTasks][taskSz];
-
-typedef struct{
-	uint32_t* psp;
-	uint32_t* next_psp;
-}task;
 
 task tasks[maxTasks];
 
@@ -32,9 +28,28 @@ void initScheduler(){
 
 void freeTask(task* t){
 	t->next_psp = (void*)0;
+	discard(t->box.buf); // free mailbox
 }
 
-void initTask(void(*fn)(void), const uint32_t idx, const task* nextTask){
+void send(uint32_t* data, uint32_t sz, uint32_t dest){
+	// send message to mailbox w/ idx dest
+	// async sending
+	mailbox* tmpb = &tasks[dest].box;
+	tmpb->tail++;
+	while((tmpb->tail+1) % tmpb->sz == tmpb->head % tmpb->sz){yield();} // yield control until mailbox has free space
+	const message tmpm = {data, sz, dest};
+	tmpb->buf[tmpb->tail % tmpb->sz] = tmpm;
+}
+
+void recieve(message* dest){
+	const uint32_t curIdx = current_task_pointer - tasks;
+	mailbox* tmpb = tasks[curIdx].box;
+	while(tmpb->tail % tmpb->sz == tmpb->head % tmpb->sz){yield();} // yield control until mailbox isnt empty
+	*dest = tmpb->buf[tmpb->head];
+	tmpb->head++;
+}
+
+void initTask(void(*fn)(void), const uint32_t idx, const task* nextTask, const uint32_t maxMessages){
 	// upon each task init, we must set up the "psp" in the stackmem arr
 	// we are simulating an exception stack frame so when this pointer is passed to asm subroutine it works
 	// this init code lets the asm routine know that it needs to run in psp mode
@@ -50,6 +65,9 @@ void initTask(void(*fn)(void), const uint32_t idx, const task* nextTask){
 	for(uint32_t i = 0; i < 8; i++, stackPointer--){*stackPointer = 0; /*init to zero ig*/} // reserve more of the stack for callee saved regs
 	tasks[idx].psp = stackPointer; // save initial stack position after loading everything into stack
 	tasks[idx].next_psp = nextTask;
+	// flush initial messaage buffer
+	const mailbox tmp = {alloc(sizeof(message) * maxMessages), 0, 0, maxMessages};
+	tasks[idx].box = tmp;
 }
 
 task* findPrevActiveTask(task* t){
@@ -85,7 +103,7 @@ void addTask(void(*fn)(void)){
 			// found first open spot with a full task next
 			initTask(fn, t - tasks, n); // if its only task, just set next task to itself
 			p->next_psp = t;
-			break;
+			return;
 		}
 	}
 }
