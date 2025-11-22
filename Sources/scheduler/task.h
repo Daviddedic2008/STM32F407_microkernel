@@ -33,6 +33,7 @@
 
 #ifndef SOURCES_SCHEDULER_TASK_H_
 #define SOURCES_SCHEDULER_TASK_H_
+#include <stdint.h>
 
 typedef struct{
 	uint32_t* data;
@@ -45,11 +46,13 @@ typedef struct{
 	uint32_t head, tail, sz;
 }mailbox;
 
-typedef struct{
-	uint32_t* psp;
-	uint32_t* next_psp;
+struct task{
+	struct task* psp;
+	struct task* next_psp;
 	mailbox box;
-}task;
+};
+
+typedef struct task task;
 
 #define maxTasks 30
 #define taskSz 128

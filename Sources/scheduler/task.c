@@ -7,7 +7,9 @@
  */
 #include "../allocator/alloc.h"
 #include "task.h"
+#include <stdint.h>
 
+#define SCB_ISR (*(volatile uint32_t*)0xE000ED00)
 
 static uint32_t stackMem[maxTasks][taskSz];
 
@@ -18,6 +20,11 @@ task* current_task_pointer; // used in pendSV handler
 uint32_t tasksAllocated;
 
 #define CURIDX (current_task_pointer - tasks)
+
+void yield(){
+	SCB_ISR = 1 << 28; // trigger pendSV exception, and therefore interrupt to switch tasks
+	__asm("isb"); // flush pipeline to ensure pendSV is triggered(I read this can help but isnt nescessary)
+}
 
 void initScheduler(){
 	tasksAllocated = 0;
@@ -43,7 +50,7 @@ void send(uint32_t* data, uint32_t sz, uint32_t dest){
 
 void recieve(message* dest){
 	const uint32_t curIdx = current_task_pointer - tasks;
-	mailbox* tmpb = tasks[curIdx].box;
+	mailbox* tmpb = &tasks[curIdx].box;
 	while(tmpb->tail % tmpb->sz == tmpb->head % tmpb->sz){yield();} // yield control until mailbox isnt empty
 	*dest = tmpb->buf[tmpb->head];
 	tmpb->head++;
@@ -63,8 +70,8 @@ void initTask(void(*fn)(void), const uint32_t idx, const task* nextTask, const u
 	*(--stackPointer) = 0; // R1
 	*(--stackPointer) = 0; // R0 — argument to task function (none here)
 	for(uint32_t i = 0; i < 8; i++, stackPointer--){*stackPointer = 0; /*init to zero ig*/} // reserve more of the stack for callee saved regs
-	tasks[idx].psp = stackPointer; // save initial stack position after loading everything into stack
-	tasks[idx].next_psp = nextTask;
+	tasks[idx].psp = (task*)stackPointer; // save initial stack position after loading everything into stack
+	tasks[idx].next_psp = (task*)nextTask;
 	// flush initial messaage buffer
 	const mailbox tmp = {alloc(sizeof(message) * maxMessages), 0, 0, maxMessages};
 	tasks[idx].box = tmp;
@@ -90,9 +97,9 @@ task* findNextActiveTask(task* t){
 	return t;
 }
 
-void addTask(void(*fn)(void)){
+void addTask(void(*fn)(void), const uint32_t maxMessages){
 	if(tasksAllocated == 0){
-		initTask(fn, maxTasks-1, &tasks[maxTasks-1]);
+		initTask(fn, maxTasks-1, &tasks[maxTasks-1], maxMessages);
 		return; // base
 	}
 	tasksAllocated++;
@@ -101,7 +108,7 @@ void addTask(void(*fn)(void)){
 			task* n = findNextActiveTask(t);
 			task* p = findPrevActiveTask(t);
 			// found first open spot with a full task next
-			initTask(fn, t - tasks, n); // if its only task, just set next task to itself
+			initTask(fn, t - tasks, n, maxMessages); // if its only task, just set next task to itself
 			p->next_psp = t;
 			return;
 		}
@@ -116,9 +123,3 @@ void ret(){
 	current_task_pointer = n;
 	p->next_psp = n;
 }
-
-void yield(){
-	SCB_ISR = 1 << 28; // trigger pendSV exception, and therefore interrupt to switch tasks
-	__asm("isb"); // flush pipeline to ensure pendSV is triggered(I read this can help but isnt nescessary)
-}
-

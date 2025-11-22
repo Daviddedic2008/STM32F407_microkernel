@@ -55,6 +55,7 @@ SECTIONS
 {
 
   /* The startup code into "FLASH" Rom type memory */
+  /* accessed by pendsv handler loader */
   .isr_vector :
   {
     . = ALIGN(4);

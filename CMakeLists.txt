@@ -52,7 +52,10 @@ set (PROJECT_SOURCES
 	Sources/main.c
 	Sources/syscalls.c
 	Sources/sysmem.c
-
+	Sources/scheduler/kernels.c
+	Sources/scheduler/PSV_h.S
+	Sources/scheduler/task.c
+	Sources/allocator/alloc.c
 
 	)
 
